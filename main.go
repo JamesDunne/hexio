@@ -42,59 +42,66 @@ func splitBySpace(data []byte, atEOF bool) (advance int, token []byte, err error
 	return 0, nil, nil
 }
 
+var userIn = os.Stdin
+var socatOut = os.Stdout
+var userOut = os.Stderr
+
+// use with socat, e.g. `socat exec:hexio,fdin=3 tcp4-connect:localhost:11264`
+var socatIn = os.NewFile(3, "socat-in")
+
 func main() {
-	// use with socat, e.g. `socat exec:hexio,fdin=3 tcp4-connect:localhost:11264`
-	userIn := os.Stdin
-	socatOut := os.Stdout
-	userOut := os.Stderr
-	socatIn := os.NewFile(3, "socat-in")
+	go socatTransformer()
 
-	go func() {
-		lineScanner := bufio.NewScanner(userIn)
-		for lineScanner.Scan() {
-			line := lineScanner.Text()
-			lineReader := strings.NewReader(line)
+	stdinTransformer()
+}
 
-			outBytes := [65536]byte{0}
-			outSlice := outBytes[0:0:65536]
+func stdinTransformer() {
+	lineScanner := bufio.NewScanner(userIn)
+	for lineScanner.Scan() {
+		line := lineScanner.Text()
+		lineReader := strings.NewReader(line)
 
-			scanner := bufio.NewScanner(lineReader)
-			scanner.Split(splitBySpace)
-			for scanner.Scan() {
-				hexToken := scanner.Text()
-				if hexToken == "" {
-					continue
-				}
+		outBytes := [65536]byte{0}
+		outSlice := outBytes[0:0:65536]
 
-				c, err := strconv.ParseUint(hexToken, 16, 8)
-				if err != nil {
-					panic(err)
-				}
-
-				outSlice = append(outSlice, byte(c))
-			}
-
-			if len(outSlice) == 0 {
+		scanner := bufio.NewScanner(lineReader)
+		scanner.Split(splitBySpace)
+		for scanner.Scan() {
+			hexToken := scanner.Text()
+			if hexToken == "" {
 				continue
 			}
 
-			_, err := socatOut.Write(outSlice)
+			c, err := strconv.ParseUint(hexToken, 16, 8)
 			if err != nil {
 				panic(err)
 			}
 
-			// echo to userOut:
-			sb := strings.Builder{}
-			sb.WriteString("\033[1;35mOUT: ")
-			toHex(&sb, outSlice)
-			sb.WriteString("\033[0m\n")
-			_, err = userOut.WriteString(sb.String())
-			if err != nil {
-				panic(err)
-			}
+			outSlice = append(outSlice, byte(c))
 		}
-	}()
 
+		if len(outSlice) == 0 {
+			continue
+		}
+
+		_, err := socatOut.Write(outSlice)
+		if err != nil {
+			panic(err)
+		}
+
+		// echo to userOut:
+		sb := strings.Builder{}
+		sb.WriteString("\033[1;35mOUT: ")
+		toHex(&sb, outSlice)
+		sb.WriteString("\033[0m\n")
+		_, err = userOut.WriteString(sb.String())
+		if err != nil {
+			panic(err)
+		}
+	}
+}
+
+func socatTransformer() {
 	// read from socatIn and echo as hex to userOut:
 	for {
 		inpBytes := [65536]byte{}
@@ -102,6 +109,12 @@ func main() {
 		// read from socatIn:
 		n, err := socatIn.Read(inpBytes[:])
 		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			userOut.WriteString("ERR: ")
+			userOut.WriteString(err.Error())
+			userOut.WriteString("\n")
 			break
 		}
 		inpSlice := inpBytes[0:n]
