@@ -85,9 +85,9 @@ func main() {
 
 			// echo to userOut:
 			sb := strings.Builder{}
-			sb.WriteString("OUT: ")
+			sb.WriteString("\033[1;35mOUT: ")
 			toHex(&sb, outSlice)
-			sb.WriteByte('\n')
+			sb.WriteString("\033[0m\n")
 			_, err = userOut.WriteString(sb.String())
 			if err != nil {
 				panic(err)
@@ -108,9 +108,9 @@ func main() {
 
 		// echo to userOut:
 		sb := strings.Builder{}
-		sb.WriteString("IN:  ")
+		sb.WriteString("\033[1;36mIN:  ")
 		toHex(&sb, inpSlice)
-		sb.WriteByte('\n')
+		sb.WriteString("\033[0m\n")
 		_, err = userOut.WriteString(sb.String())
 		if err != nil {
 			panic(err)
